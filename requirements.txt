@@ -1,0 +1,10 @@
+pandas
+numpy
+scikit-learn
+lightgbm
+xgboost
+tensorflow
+scipy
+matplotlib
+seaborn
+web3>=7.0
