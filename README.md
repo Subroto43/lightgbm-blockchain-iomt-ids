@@ -197,7 +197,7 @@ Model comparison on CIC-IoMT 2024 (mean over 5 seeds; see paper Table VI):
 | **LightGBM (proposed)** | **97.9%** | **97.9%** | **0.003** | **3.22** |
 | XGBoost | 98.0% | 98.0% | 0.007 | 12.27 |
 | Random Forest | 98.1% | 98.1% | 0.009 | 1,350 |
-| LSTM (LSTM) | 91.8% | 91.8% | 0.169 | 15.09 |
+| LSTM | 91.8% | 91.8% | 0.169 | 15.09 |
 | Hybrid (LGBM+LSTM) | 97.9% | 97.9% | 0.191 | 18.31 |
 | SVM (RBF) | 64.0% | 57.0% | 52.256 | 361.8 |
 
