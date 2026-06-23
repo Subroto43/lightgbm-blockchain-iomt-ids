@@ -1,0 +1,41 @@
+# ---- Secrets (NEVER commit) ----
+.env
+*.env
+*.key
+secrets.*
+
+# ---- Dataset files (download separately; see README) ----
+*.csv
+*.parquet
+updated_dataset_with_ips.csv
+
+# ---- Trained models / artifacts ----
+*.keras
+*.h5
+*.pkl
+*.joblib
+lightgbm_model.txt
+temp_lstm_model.keras
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- Optional: generated figures (uncomment to exclude) ----
+# *.png
