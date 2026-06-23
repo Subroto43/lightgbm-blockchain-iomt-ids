@@ -71,7 +71,7 @@ Download the dataset and update the file path at the top of each script/notebook
 
 - **Python 3.10+**
 - **Windows 10/11** for the firewall-enforcement and stress-test scripts (they use `netsh advfirewall`). The detection/training code itself is OS-independent. *On Linux, the equivalent `iptables`/`ufw` rules apply.*
-- Access to a **Pure Chain** (Ethereum-compatible PoA) RPC endpoint for the blockchain components.
+- Access to a **Pure Chain** (Ethereum-compatible PoA²) RPC endpoint for the blockchain components.
 
 Install the Python dependencies:
 
