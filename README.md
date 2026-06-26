@@ -4,7 +4,7 @@ Official source code for the paper:
 
 > **Decentralized Intrusion Detection and Prevention Leveraging Lightweight ML Model for Securing IoMT Networks**
 > S. K. Ghosh, M. Golam, S. Bin Noor, J.-M. Lee, and D.-S. Kim
-> *IEEE Internet of Things Journal*, 2025. DOI: `10.1109/JIOT.2026.3707196`
+> *IEEE Internet of Things Journal*, 2026. DOI: `10.1109/JIOT.2026.3707196`
 
 This repository provides the complete, reproducible implementation of a **closed-loop, blockchain-empowered intrusion detection and prevention framework** for the Internet of Medical Things (IoMT). The framework couples a lightweight **LightGBM** classifier with a **permissioned blockchain (Pure Chain)** and an **automated firewall enforcement** module, delivering a verifiable detection-to-response pipeline.
 
@@ -218,13 +218,17 @@ Blockchain (Pure Chain): ~45 ms average `logAlert` latency, 66.85 TPS throughput
 If you use this code, please cite:
 
 ```bibtex
-@article{ghosh2025decentralized,
-  title   = {Decentralized Intrusion Detection and Prevention Leveraging Lightweight ML Model for Securing IoMT Networks},
-  author  = {Ghosh, Subroto Kumar and Golam, Mohtasin and Bin Noor, Sium and Lee, Jae-Min and Kim, Dong-Seong},
-  journal = {IEEE Internet of Things Journal},
-  year    = {2025},
-  doi     = {10.1109/JIOT.2026.3707196}
-}
+@ARTICLE{11579356,
+  author={Ghosh, Subroto Kumar and Golam, Mohtasin and Noor, Sium Bin and Lee, Jae Min and Kim, Dong-Seong},
+  journal={IEEE Internet of Things Journal}, 
+  title={Decentralized Intrusion Detection and Prevention Leveraging Lightweight ML Model for Securing IoMT Networks}, 
+  year={2026},
+  volume={},
+  number={},
+  pages={1-1},
+  keywords={Modeling;Internet of Things;Intrusion detection;Timing;IP networks;Signal detection;Firewalls (computing);Training;Accuracy;TCP;Intrusion Detection;IoMT;LightGBM;Blockchain-Empowered;Real-Time Threat Mitigation;Smart Contract Enforcement},
+  doi={10.1109/JIOT.2026.3707196}}
+
 ```
 
 ---
