@@ -2,6 +2,7 @@ from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
 import time
 import json
+import os
 import statistics
 
 # === CONNECT ===
@@ -25,23 +26,38 @@ contract_abi = json.loads('''[
 ]''')
 
 contract = w3.eth.contract(address=contract_address, abi=contract_abi)
-private_key = '# ← your real key'
-account = '0x30e0Fe535DEDdB072743B847eDC48bD5EC54AD02'
+
+# === CREDENTIALS (loaded from environment; never hard-code a key) ===
+private_key = os.environ.get("PURECHAIN_PRIVATE_KEY")
+account = os.environ.get("PURECHAIN_ACCOUNT", '0x30e0Fe535DEDdB072743B847eDC48bD5EC54AD02')
+if not private_key:
+    raise SystemExit("Set the PURECHAIN_PRIVATE_KEY environment variable before running.")
 
 NUM_TRANSACTIONS = 1000
+HASH_MAP_FILE = "hash_to_ip.json"
+
+
+def norm_hash(h):
+    """Lowercase hex without 0x, so the firewall agent's keys always match."""
+    if isinstance(h, bytes):
+        h = h.hex()
+    return h.lower().removeprefix("0x")
+
 
 base_nonce = w3.eth.get_transaction_count(account, 'latest')
 tx_hashes = []
 send_times = []
+hash_to_ip = {}   # local off-chain map from entity hash -> real source IP
 
 # === PHASE 1: SEND ALL 1000 TXs ===
-print(f"📤 Sending {NUM_TRANSACTIONS} transactions...")
+print(f"Sending {NUM_TRANSACTIONS} transactions...")
 overall_start = time.time()
 
 for i in range(NUM_TRANSACTIONS):
     entity_ip = f"192.168.{i // 256}.{i % 256}"
-    entity_hash_bytes32 = bytes.fromhex(Web3.keccak(
-        text=entity_ip).hex()[2:]).rjust(32, b'\0')
+    entity_hash_hex = norm_hash(Web3.keccak(text=entity_ip).hex())
+    entity_hash_bytes32 = bytes.fromhex(entity_hash_hex).rjust(32, b'\0')
+    hash_to_ip[entity_hash_hex] = entity_ip
 
     tx = contract.functions.logAlert(
         70000 + i, "TCP_IP-DDoS-SYN_test", 9, entity_hash_bytes32
@@ -62,12 +78,16 @@ for i in range(NUM_TRANSACTIONS):
     if (i + 1) % 100 == 0:
         print(f"  Sent {i + 1}/{NUM_TRANSACTIONS}...")
 
+# persist the hash -> IP map for the firewall agent
+with open(HASH_MAP_FILE, "w") as f:
+    json.dump(hash_to_ip, f)
+
 send_done_time = time.time()
 print(
-    f"✅ All {NUM_TRANSACTIONS} TXs sent in {send_done_time - overall_start:.2f}s")
+    f"All {NUM_TRANSACTIONS} TXs sent in {send_done_time - overall_start:.2f}s")
 
 # === PHASE 2: COLLECT ALL RECEIPTS ===
-print(f"\n⏳ Waiting for confirmations...")
+print(f"\nWaiting for confirmations...")
 latencies = []
 gas_used = []
 

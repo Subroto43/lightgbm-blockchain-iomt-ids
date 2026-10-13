@@ -20,21 +20,24 @@ The pipeline integrates four functional layers and runs as an end-to-end loop fr
             ▼
  ┌─────────────────────────┐   1. Detection
  │  LightGBM IDS            │   multi-class flow classification (21 classes)
- │  (lightweight, 3.22 MB)  │   → threat type + severity score + entity (IP) hash
+ │  (lightweight, 3.22 MB)  │   → threat type + severity score + source IP
  └─────────────────────────┘
+            │ keccak256(source IP) = entityHash   (plus a local hash→IP map)
             │ logAlert(threatId, threatType, severity, entityHash)
             ▼
  ┌─────────────────────────┐   2. Immutable logging
- │  Pure Chain smart        │   keccak256-hashed IP logged on-chain
+ │  Pure Chain smart        │   only the keccak256 hash is written on-chain
  │  contract (PoA²)         │   severity ≥ 7  →  entity marked blocked
  └─────────────────────────┘   emits AlertLogged / ResponseTriggered / Blocked
             │ polls AlertLogged events every 5 s
             ▼
  ┌─────────────────────────┐   3. Enforcement
- │  Python firewall agent   │   decodes entityHash, applies OS-level
- │  (netsh advfirewall)     │   firewall rule for severity ≥ 7
- └─────────────────────────┘
+ │  Python firewall agent   │   decodes entityHash → resolves the real IP via
+ │  (netsh advfirewall)     │   the local hash→IP map → installs an OS-level
+ └─────────────────────────┘   block rule (remoteip=<ip>) for severity ≥ 7
 ```
+
+**Privacy / enforcement note.** keccak256 is a one-way hash and is *not* reversed. Only the hash is stored on-chain, for privacy. The gateway keeps a small **local, off-chain map** (`hash_to_ip.json`) that pairs each hash with the original source IP at the moment the alert is generated. The firewall agent resolves the hash to the real IP through this map (a lookup, not a cryptographic inversion) and blocks that specific address. In this single-gateway prototype the detector, the map, and the agent run on the same host, which already holds the plaintext IP.
 
 ---
 
@@ -43,13 +46,14 @@ The pipeline integrates four functional layers and runs as an end-to-end loop fr
 | File | Role | Paper section |
 |------|------|---------------|
 | `dataset_add.py` | Adds per-class **severity scores** and **synthetic RFC-1918 source/destination IPs** to the dataset (IPs are used only for firewall routing, **never** as model features). | §IV-B, Table III |
-| `Hybrid_model_updated.ipynb` | Main notebook: preprocessing, **LightGBM** (proposed IDS), **LSTM** and **Hybrid (LGBM+LSTM)** baselines, evaluation, figures, and on-chain alert logging via Web3. | §IV-C/D, §V-A/D/E, Tables V–VI |
+| `Hybrid_model_updated.ipynb` | Main notebook: preprocessing, **LightGBM** (proposed IDS), **LSTM** and **Hybrid (LGBM+LSTM)** baselines, evaluation, figures, and on-chain alert logging via Web3. Writes the local `hash_to_ip.json` map when sending alerts. | §IV-C/D, §V-A/D/E, Tables V–VI |
 | `xgboost_svm_rf.py` | **XGBoost**, **Random Forest**, and **SVM (RBF)** comparison baselines under the identical pipeline. | §IV-D, Table VI |
 | `smart_contract.sol` | `IntrusionBlockerWithResponse` — Solidity contract for severity-aware alert logging and on-chain blocking. | §III-G, Algorithm 1 |
-| `firewall_agent_separate.py` | Standalone agent that polls the contract and enforces Windows firewall rules. **Run as Administrator.** | §III-H, Algorithm 2 |
+| `firewall_agent_separate.py` | Standalone agent that polls the contract, resolves each hash to the real IP via `hash_to_ip.json`, and enforces Windows firewall rules. **Run as Administrator.** | §III-H, Algorithm 2 |
 | `purechain_metrics.py` | Blockchain benchmark: gas cost, transaction latency, throughput (TPS). | §V-I, Table VII |
 | `stress_test.py` | Sequential + concurrent load/stress test of the detection-to-response pipeline. **Run as Administrator.** | §V-K/L, Tables VIII–X |
 | `ip_sensitivity_test.py` | IP-class (A/B/C) firewall rule-application sensitivity study. **Run as Administrator.** | §IV-B, Table IV |
+| `hash_to_ip.json` | **Generated at runtime** (not committed): local off-chain map from entity hash to the real source IP, used only for enforcement. Add it to `.gitignore`. | §III-H |
 
 ---
 
@@ -59,7 +63,7 @@ The framework is evaluated on the **CIC-IoMT 2024** benchmark (WiFi + MQTT traff
 
 - Source: Canadian Institute for Cybersecurity — *CICIoMT2024* (https://www.unb.ca/cic/datasets/).
 - Reference: S. Dadkhah et al., *"CICIoMT2024: A benchmark dataset for multi-protocol security assessment in IoMT," Internet of Things*, vol. 28, 101351, 2024.
-- File used: `CIC_IoMT_2024_WiFi_MQTT_test.csv` (treated as the full dataset, then re-split). After cleaning, **45 numerical features** and **1,614,182 samples** are retained.
+- File used: `CIC_IoMT_2024_WiFi_MQTT_test.csv` (treated as the full labeled set, then re-split with a fixed-seed stratified 70/15/15 partition). After cleaning, **45 numerical features** and **1,614,182 samples** across **21 classes** are retained. The 21 labels arise from the WiFi/MQTT attack types at their finer recorded granularity (e.g. DDoS ICMP/UDP each appear as two numbered variants) plus benign traffic.
 
 **Note on IP addresses.** The original CIC-IoMT 2024 capture anonymizes IP headers, so `dataset_add.py` generates **synthetic** Class A/B/C private IPs purely as routing identifiers for the firewall demonstration. These synthetic IPs and the derived `Severity_Score` are **excluded from the ML feature set** to prevent any training bias / leakage.
 
@@ -97,27 +101,29 @@ web3>=7.0
 
 ## Setup: blockchain credentials (no key is included)
 
-For security, **no private key is shipped in this repository.** The blockchain scripts contain a placeholder (`# ← your real key`). Supply your own key before running any on-chain component.
+For security, **no private key is shipped in this repository.** The blockchain scripts read the key from an environment variable; nothing is hard-coded. Supply your own key before running any on-chain component.
 
 **Recommended — environment variable** (do not hardcode):
 
 ```powershell
 # PowerShell
-$env:PURECHAIN_KEY = "your_private_key_here"
+$env:PURECHAIN_PRIVATE_KEY = "your_private_key_here"
 ```
 ```python
 import os
-private_key = os.environ["PURECHAIN_KEY"]
+private_key = os.environ["PURECHAIN_PRIVATE_KEY"]
 ```
 
-Update the following near the top of `purechain_metrics.py`, `stress_test.py`, and the relevant notebook cells:
+Set the following near the top of `purechain_metrics.py`, `stress_test.py`, and the relevant notebook cells:
 
 | Variable | Description |
 |----------|-------------|
-| `private_key` / `PRIVATE_KEY` | Your funded Pure Chain account key (keep secret). |
-| `account` / `ACCOUNT` | The public address derived from your key. |
+| `PURECHAIN_PRIVATE_KEY` (env) | Your funded Pure Chain account key (keep secret; never commit). |
+| `account` | The public address derived from your key. |
 | `contract_address` | Address of your deployed `IntrusionBlockerWithResponse` contract. |
 | `rpc_url` | Your Pure Chain RPC endpoint. |
+
+> Only the components that **send** transactions (the notebook's alert-logging cells, `purechain_metrics.py`, `stress_test.py`) need the private key. `firewall_agent_separate.py` only **reads** events and applies firewall rules, so it does not need the key.
 
 ---
 
@@ -150,17 +156,16 @@ _severityThreshold = 7
 Record the deployed contract address and set it in the scripts.
 
 ### 4. Log alerts on-chain
-Run the blockchain-logging cells in `Hybrid_model_updated.ipynb` to submit detected alerts to the contract via `logAlert(...)`.
+Run the blockchain-logging cells in `Hybrid_model_updated.ipynb` to submit detected alerts to the contract via `logAlert(...)`. These cells also write `hash_to_ip.json`, the local map the firewall agent uses to resolve each hash to its real IP.
 
 ### 5. Start the firewall enforcement agent — **as Administrator**
-`firewall_agent_separate.py` adds OS-level firewall rules with `netsh advfirewall`, which **requires elevated privileges**.
+`firewall_agent_separate.py` adds OS-level firewall rules with `netsh advfirewall`, which **requires elevated privileges**. It reads `hash_to_ip.json` and blocks the resolved source IP (`remoteip=<ip>`) for any entity with severity ≥ 7.
 
 > **Open PowerShell as Administrator** (right-click PowerShell → *Run as administrator*), then:
 ```powershell
-$env:PURECHAIN_KEY = "your_private_key_here"   # if needed
 python firewall_agent_separate.py
 ```
-The agent polls `AlertLogged` events every 5 seconds and blocks any entity with severity ≥ 7. Without administrator rights, `netsh` will fail to add rules.
+The agent polls `AlertLogged` events every 5 seconds. Without administrator rights, `netsh` will fail to add rules.
 
 ### 6. (Optional) Reproduce the benchmarks
 ```powershell
@@ -184,7 +189,7 @@ python ip_sensitivity_test.py      # IP-class firewall latency (Table IV) — Ad
 
 **Events:** `AlertLogged`, `ResponseTriggered`, `Blocked`, `Unblocked`.
 
-Source IPs are hashed with **keccak256** before submission so raw identifiers are never written on-chain. The contract was verified with SolidityScan (security score **97/100, Low Risk**).
+Source IPs are hashed with **keccak256** before submission, so raw identifiers are never written on-chain; the original address is resolved locally through the off-chain `hash_to_ip.json` map for enforcement only. The contract was scanned with **SolidityScan** (automated vulnerability scan: **97/100, Low Risk**). This is a static scan rather than a formal audit.
 
 ---
 
@@ -201,13 +206,16 @@ Model comparison on CIC-IoMT 2024 (mean over 5 seeds; see paper Table VI):
 | Hybrid (LGBM+LSTM) | 97.9% | 97.9% | 0.191 | 18.31 |
 | SVM (RBF) | 64.0% | 57.0% | 52.256 | 361.8 |
 
-Blockchain (Pure Chain): ~45 ms average `logAlert` latency, 66.85 TPS throughput, gas 23,314–27,627 units; end-to-end detection-to-response latency ≈ 73 ms.
+Blockchain (Pure Chain): ~45 ms average `logAlert` latency, 66.85 TPS raw throughput, gas 23,314–27,627 units.
+
+**Latency note.** The single-alert detection-to-enforcement **processing** cost is ≈ 73 ms (inference 0.003 ms + chain confirmation 45 ms + firewall rule 28 ms). This **excludes** the 5-second agent polling interval, so the live wall-clock response is bounded by that interval, not by 73 ms. Under concurrent bursts the median end-to-end latency rises from ≈ 2.07 s at 10 simultaneous alerts to ≈ 6.11 s at 100, with a 100% logging success rate throughout (paper Tables VIII–X).
 
 ---
 
 ## Security and responsible use
 
-- **No private keys are included** in this repository. Use your own credentials and keep them out of version control (use environment variables / a git-ignored `.env`).
+- **No private keys are included** in this repository, and the scripts read the key from the `PURECHAIN_PRIVATE_KEY` environment variable. Keep credentials out of version control (use environment variables / a git-ignored `.env`).
+- **Do not commit `hash_to_ip.json`** — it maps hashes to real IPs. Add it to `.gitignore`.
 - The account and contract addresses in the code refer to a **private, permissioned** test network and are safe to publish, but you should deploy and point to **your own** contract for any real use.
 - The synthetic IP addresses exist only to demonstrate firewall enforcement; deploy with authentic packet sources for production.
 
@@ -220,8 +228,8 @@ If you use this code, please cite:
 ```bibtex
 @ARTICLE{11579356,
   author={Ghosh, Subroto Kumar and Golam, Mohtasin and Noor, Sium Bin and Lee, Jae Min and Kim, Dong-Seong},
-  journal={IEEE Internet of Things Journal}, 
-  title={Decentralized Intrusion Detection and Prevention Leveraging Lightweight ML Model for Securing IoMT Networks}, 
+  journal={IEEE Internet of Things Journal},
+  title={Decentralized Intrusion Detection and Prevention Leveraging Lightweight ML Model for Securing IoMT Networks},
   year={2026},
   volume={},
   number={},

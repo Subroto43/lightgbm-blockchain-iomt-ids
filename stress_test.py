@@ -4,14 +4,20 @@ from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
 import time
 import json
+import os
 import statistics
 import subprocess
 import threading
 
 RPC_URL = "https://purechainnode.com:8547"
 CONTRACT = "0xC7f20054e3E29f781D5c318Db1bbaa981288dF25"
-PRIVATE_KEY = "# ← your real key"
-ACCOUNT = "0x30e0Fe535DEDdB072743B847eDC48bD5EC54AD02"
+
+# === CREDENTIALS (loaded from environment; never hard-code a key) ===
+PRIVATE_KEY = os.environ.get("PURECHAIN_PRIVATE_KEY")
+ACCOUNT = os.environ.get("PURECHAIN_ACCOUNT", "0x30e0Fe535DEDdB072743B847eDC48bD5EC54AD02")
+if not PRIVATE_KEY:
+    raise SystemExit("Set the PURECHAIN_PRIVATE_KEY environment variable before running.")
+
 THRESHOLD = 7
 
 ABI = json.loads('[{"inputs":[{"internalType":"uint256","name":"threatId","type":"uint256"},{"internalType":"string","name":"threatType","type":"string"},{"internalType":"uint256","name":"severity","type":"uint256"},{"internalType":"bytes32","name":"entityHash","type":"bytes32"}],"name":"logAlert","outputs":[],"stateMutability":"nonpayable","type":"function"}]')
@@ -60,7 +66,7 @@ def send_alert(threat_id, threat_type="TCPIP-DDoS-SYNtest", severity=9, ip="10.0
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
         success = receipt.status == 1
     except Exception as e:
-        print(f"    ⚠ nonce={n} error: {str(e)[:60]}")
+        print(f"    nonce={n} error: {str(e)[:60]}")
         success = False
 
     t_commit_end = time.perf_counter()
@@ -68,10 +74,11 @@ def send_alert(threat_id, threat_type="TCPIP-DDoS-SYNtest", severity=9, ip="10.0
     t_rule_start = time.perf_counter()
     if severity >= THRESHOLD and success:
         rule_name = f"Block_{entity_hash.hex()[:16]}"
+        # The source IP is known locally here, so block the real address.
         subprocess.run(
             ["netsh", "advfirewall", "firewall", "add", "rule",
              f"name={rule_name}", "dir=in", "action=block",
-             "remoteip=any", "enable=yes"],
+             f"remoteip={ip}", "enable=yes"],
             capture_output=True, text=True
         )
     t_rule_end = time.perf_counter()
