@@ -3,7 +3,7 @@
 *.env
 *.key
 secrets.*
-hash_to_ip.json          ← add this line
+hash_to_ip.json
 
 # ---- Dataset files (download separately; see README) ----
 *.csv
